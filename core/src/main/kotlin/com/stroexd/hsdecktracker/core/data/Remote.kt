@@ -3,6 +3,8 @@ package com.stroexd.hsdecktracker.core.data
 import com.stroexd.hsdecktracker.core.cards.CardDatabase
 import com.stroexd.hsdecktracker.core.cards.GameFormat
 import com.stroexd.hsdecktracker.core.cards.SetNames
+import com.stroexd.hsdecktracker.core.meta.ArenaRatingSnapshot
+import com.stroexd.hsdecktracker.core.meta.ArenaRatingsParser
 import com.stroexd.hsdecktracker.core.meta.DeckListParser
 import com.stroexd.hsdecktracker.core.meta.HsReplayParser
 import com.stroexd.hsdecktracker.core.meta.MetaSnapshot
@@ -344,6 +346,61 @@ class MetaRepository(
         private const val MAX_AGE_MILLIS = 6L * 60 * 60 * 1000
         const val ARCHETYPES_URL = "https://hsreplay.net/api/v1/archetypes/"
         const val DECKS_URL = "https://hsreplay.net/analytics/query/list_decks_by_win_rate_v2/"
+        private val jsonHeaders = mapOf("Accept" to "application/json")
+    }
+}
+
+data class ArenaRatingsState(
+    val snapshot: ArenaRatingSnapshot? = null,
+    val loading: Boolean = false,
+    val error: LoadError? = null,
+)
+
+/** Arena card win rates from HSReplay; a single number per card, refreshed at most daily. */
+class ArenaRatingsRepository(
+    private val dir: File,
+    private val http: HttpClient,
+    private val clock: () -> Long = System::currentTimeMillis,
+) {
+    private val _state = MutableStateFlow(ArenaRatingsState(snapshot = loadCached()))
+    val state: StateFlow<ArenaRatingsState> = _state.asStateFlow()
+    private val mutex = Mutex()
+
+    fun rating(dbfId: Int): Double? = _state.value.snapshot?.ratings?.get(dbfId)
+
+    private fun cacheFile() = File(dir, "arena_ratings.json")
+
+    private fun loadCached(): ArenaRatingSnapshot? {
+        val file = cacheFile()
+        if (!file.exists()) return null
+        return runCatching { AppJson.decodeFromString(ArenaRatingSnapshot.serializer(), file.readText()) }.getOrNull()
+    }
+
+    suspend fun refresh(db: CardDatabase, force: Boolean = false) = mutex.withLock {
+        val existing = _state.value.snapshot
+        if (!force && existing != null && existing.ratings.isNotEmpty() && clock() - existing.fetchedAt < MAX_AGE_MILLIS) {
+            return@withLock
+        }
+        _state.update { it.copy(loading = true, error = null) }
+        try {
+            val body = http.getText(CARD_STATS_URL, jsonHeaders)
+            val snapshot = ArenaRatingsParser.parse(body, db).copy(fetchedAt = clock(), source = "HSReplay.net")
+            if (snapshot.ratings.isEmpty()) throw LoadException(LoadError.NoData)
+            withContext(Dispatchers.IO) {
+                dir.mkdirs()
+                cacheFile().writeText(AppJson.encodeToString(ArenaRatingSnapshot.serializer(), snapshot))
+            }
+            _state.update { it.copy(snapshot = snapshot, loading = false) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _state.update { it.copy(loading = false, error = LoadError.of(e)) }
+        }
+    }
+
+    companion object {
+        const val CARD_STATS_URL = "https://hsreplay.net/api/v1/arena/card_stats/free/?format=json"
+        private const val MAX_AGE_MILLIS = 24L * 60 * 60 * 1000
         private val jsonHeaders = mapOf("Accept" to "application/json")
     }
 }

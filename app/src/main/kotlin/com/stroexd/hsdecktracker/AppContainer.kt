@@ -8,6 +8,7 @@ import com.stroexd.hsdecktracker.core.collection.CardCollection
 import com.stroexd.hsdecktracker.core.collection.ChangedCard
 import com.stroexd.hsdecktracker.core.collection.CollectionChange
 import com.stroexd.hsdecktracker.core.collection.CollectionChanges
+import com.stroexd.hsdecktracker.core.data.ArenaRatingsRepository
 import com.stroexd.hsdecktracker.core.data.CardRepository
 import com.stroexd.hsdecktracker.core.data.CollectionRepository
 import com.stroexd.hsdecktracker.core.data.CollectionUndo
@@ -28,6 +29,7 @@ import com.stroexd.hsdecktracker.core.stats.MatchResult
 import com.stroexd.hsdecktracker.core.tracker.GameEvent
 import com.stroexd.hsdecktracker.core.tracker.TrackerController
 import com.stroexd.hsdecktracker.core.tracker.TrackerState
+import com.stroexd.hsdecktracker.core.vision.ArenaDraftWatcher
 import com.stroexd.hsdecktracker.core.vision.CardNameIndex
 import com.stroexd.hsdecktracker.core.vision.CollectionEvent
 import com.stroexd.hsdecktracker.core.vision.CollectionScanner
@@ -98,6 +100,7 @@ class AppContainer(context: Context) {
     val matches = MatchRepository(dataDir)
     val cards = CardRepository(cacheDir, http)
     val meta = MetaRepository(cacheDir, http)
+    val arenaRatings = ArenaRatingsRepository(cacheDir, http)
     val tracker = TrackerController()
 
     /** English names are always recognized too: many play with an English client. */
@@ -118,6 +121,11 @@ class AppContainer(context: Context) {
     private val _recognition = MutableStateFlow(RecognitionStatus())
     val recognition: StateFlow<RecognitionStatus> = _recognition.asStateFlow()
 
+    private val _arenaDraft = MutableStateFlow<List<Int>>(emptyList())
+
+    /** dbfIds of the cards currently offered in a draft, left to right; empty when not drafting. */
+    val arenaDraft: StateFlow<List<Int>> = _arenaDraft.asStateFlow()
+
     private var nameIndex: CardNameIndex? = null
     private var nameIndexSources: Pair<CardDatabase, CardDatabase>? = null
     private var visionTracker: VisionGameTracker? = null
@@ -125,6 +133,7 @@ class AppContainer(context: Context) {
     @Volatile
     private var collectionScanner: CollectionScanner? = null
     private var collectionWatcher: CollectionWatcher? = null
+    private var arenaWatcher: ArenaDraftWatcher? = null
     private var frameCount = 0
     private var ocrFrameCount = 0
 
@@ -152,6 +161,7 @@ class AppContainer(context: Context) {
             cards.checkForUpdate()
             if (gameLocale.value != GameLocales.ENGLISH) cardsEnglish.checkForUpdate()
             meta.refresh(GameFormat.STANDARD, settings.value, cards.db)
+            if (settings.value.showArenaRatings) arenaRatings.refresh(cards.db)
         }
     }
 
@@ -203,6 +213,7 @@ class AppContainer(context: Context) {
 
     fun onRecognitionStarted() {
         visionTracker = null
+        arenaWatcher = null
         frameCount = 0
         ocrFrameCount = 0
         _recognition.value = RecognitionStatus(active = true, scan = _recognition.value.scan)
@@ -212,6 +223,8 @@ class AppContainer(context: Context) {
     fun onRecognitionStopped() {
         visionTracker = null
         collectionScanner = null
+        arenaWatcher = null
+        _arenaDraft.value = emptyList()
         _recognition.update { it.copy(active = false, phase = VisionGameTracker.Phase.IDLE, scan = null) }
     }
 
@@ -253,7 +266,12 @@ class AppContainer(context: Context) {
         vision.decisionLog = notes?.let { list -> { note: String -> list += note } }
         val events = vision.onFrame(frame)
         events.forEach { onGameEvent(it) }
-        if (vision.phase == VisionGameTracker.Phase.IDLE || vision.phase == VisionGameTracker.Phase.ENDED) watchMenus(index, frame, notes)
+        if (vision.phase == VisionGameTracker.Phase.IDLE || vision.phase == VisionGameTracker.Phase.ENDED) {
+            watchMenus(index, frame, notes)
+            watchArenaDraft(index, frame, notes)
+        } else {
+            clearArenaDraft()
+        }
         followClientLanguage(vision.gameLocale)
         frameCount++
         if (!reused) ocrFrameCount++
@@ -276,6 +294,21 @@ class AppContainer(context: Context) {
         val watcher = collectionWatcher ?: CollectionWatcher(index).also { collectionWatcher = it }
         watcher.decisionLog = notes?.let { list -> { note: String -> list += "menu: $note" } }
         watcher.onFrame(frame).forEach { event -> appScope.launch { applyCollectionEvent(event) } }
+    }
+
+    private fun watchArenaDraft(index: CardNameIndex, frame: OcrFrame, notes: MutableList<String>?) {
+        if (!settings.value.showArenaRatings) return clearArenaDraft()
+        val watcher = arenaWatcher ?: ArenaDraftWatcher(index).also { arenaWatcher = it }
+        watcher.decisionLog = notes?.let { list -> { note: String -> list += "draft: $note" } }
+        if (!watcher.onFrame(frame)) return
+        val dbfIds = watcher.pick?.cards?.map { it.first() }.orEmpty()
+        _arenaDraft.value = dbfIds
+        if (dbfIds.isNotEmpty()) appScope.launch { arenaRatings.refresh(cards.db) }
+    }
+
+    private fun clearArenaDraft() {
+        arenaWatcher?.reset()
+        if (_arenaDraft.value.isNotEmpty()) _arenaDraft.value = emptyList()
     }
 
     private suspend fun applyCollectionEvent(event: CollectionEvent) {
@@ -368,6 +401,7 @@ class AppContainer(context: Context) {
             nameIndexSources = sources
             visionTracker = null
             collectionWatcher = null
+            arenaWatcher = null
         }
         return nameIndex
     }

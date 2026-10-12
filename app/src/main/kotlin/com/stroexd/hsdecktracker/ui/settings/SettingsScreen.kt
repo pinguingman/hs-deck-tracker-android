@@ -370,6 +370,12 @@ fun SettingsScreen(navController: NavHostController) {
                         onChange = { v -> update { it.copy(trackCollectionChanges = v) } },
                     )
                     SwitchRow(
+                        title = stringResource(R.string.arena_ratings),
+                        subtitle = stringResource(R.string.arena_ratings_hint),
+                        checked = settings.showArenaRatings,
+                        onChange = { v -> update { it.copy(showArenaRatings = v) } },
+                    )
+                    SwitchRow(
                         title = stringResource(R.string.show_recognized_texts),
                         checked = settings.showRecognitionDebug,
                         onChange = { v -> update { it.copy(showRecognitionDebug = v) } },

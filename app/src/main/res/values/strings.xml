@@ -528,6 +528,10 @@
     <string name="no">No</string>
     <string name="ok">OK</string>
     <string name="track_collection">Update collection from packs &amp; crafting</string>
+    <string name="arena_ratings">Card ratings while drafting</string>
+    <string name="arena_ratings_hint">Win rate from HSReplay</string>
+    <string name="arena_draft_title">Draft</string>
+    <string name="arena_ratings_missing">No ratings loaded</string>
     <string name="background_tracker_label">HS Deck Tracker – background tracking</string>
     <string name="background_tracker_description">Starts tracking when Hearthstone opens and reads the game screen on the device. It only notices which app is in front; other apps are not read.</string>
     <string name="background_tracking">Background tracking</string>

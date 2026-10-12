@@ -527,6 +527,10 @@
     <string name="no">Nein</string>
     <string name="ok">OK</string>
     <string name="track_collection">Sammlung bei Packungen &amp; Herstellen aktualisieren</string>
+    <string name="arena_ratings">Kartenwertungen beim Draften</string>
+    <string name="arena_ratings_hint">Siegrate von HSReplay</string>
+    <string name="arena_draft_title">Draft</string>
+    <string name="arena_ratings_missing">Keine Wertungen geladen</string>
     <string name="background_tracker_label">HS Deck Tracker – Hintergrund-Tracking</string>
     <string name="background_tracker_description">Startet das Tracking, sobald Hearthstone geöffnet wird, und liest den Spielbildschirm auf dem Gerät. Es erkennt nur, welche App vorne ist; andere Apps werden nicht gelesen.</string>
     <string name="background_tracking">Hintergrund-Tracking</string>
