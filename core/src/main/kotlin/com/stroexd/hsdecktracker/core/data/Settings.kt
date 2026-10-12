@@ -65,6 +65,7 @@ data class AppSettings(
     val backgroundTracking: Boolean = true,
     val showOverlay: Boolean = true,
     val trackCollectionChanges: Boolean = true,
+    val showArenaRatings: Boolean = true,
     val showRecognitionDebug: Boolean = false,
     val recordDiagnostics: Boolean = false,
     val autoUpdates: Boolean = true,

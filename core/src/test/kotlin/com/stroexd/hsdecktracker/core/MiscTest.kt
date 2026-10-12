@@ -25,6 +25,7 @@ import com.stroexd.hsdecktracker.core.deck.Deck
 import com.stroexd.hsdecktracker.core.deck.DeckAnalysis
 import com.stroexd.hsdecktracker.core.deck.DeckIssue
 import com.stroexd.hsdecktracker.core.deck.IssueSeverity
+import com.stroexd.hsdecktracker.core.meta.ArenaRatingsParser
 import com.stroexd.hsdecktracker.core.meta.HsReplayParser
 import com.stroexd.hsdecktracker.core.meta.OpponentPredictor
 import com.stroexd.hsdecktracker.core.stats.DrawOdds
@@ -169,6 +170,52 @@ class MiscTest {
         assertEquals("def", prediction.first().deck.id)
         assertEquals(mapOf(EPIC_MAGE to 1, LEEROY to 1), prediction.first().remainingCards)
         assertEquals(2, OpponentPredictor.predict(HsClass.MAGE, emptyList(), decks).size)
+    }
+
+    @Test
+    fun arenaRatingsParsing() {
+        val db = TestCards.db
+
+        // A bare array, dbf_id + an already 0..100 metric, with an unrelated extra field.
+        val bare = ArenaRatingsParser.parse(
+            """[{"dbf_id":1,"deck_win_rate":54.2,"extra_unexpected_field":"x"},{"dbf_id":3,"deck_win_rate":60.0}]""",
+            db,
+        )
+        assertEquals(mapOf(FIREBALL to 54.2, LEEROY to 60.0), bare.ratings)
+
+        // A "data" wrapper, card_id instead of dbf_id, a 0..1 metric needing the *100 scale-up.
+        val wrapped = ArenaRatingsParser.parse(
+            """{"data":[{"card_id":"CS2_029","win_rate":0.542},{"card_id":"RARE_01","winrate":0.6}]}""",
+            db,
+        )
+        assertEquals(mapOf(FIREBALL to 54.2, RARE_NEUTRAL to 60.0), wrapped.ratings)
+
+        // HSReplay's deck endpoint shape, a per-class map of rows.
+        val perClass = ArenaRatingsParser.parse(
+            """{"series":{"data":{"MAGE":[{"dbfId":1,"win_rate":55.0}],"ROGUE":[{"dbfId":3,"win_rate":48.0}]}}}""",
+            db,
+        )
+        assertEquals(mapOf(FIREBALL to 55.0, LEEROY to 48.0), perClass.ratings)
+
+        // Missing id, missing metric, a non-numeric metric and an out-of-range metric are skipped, not fatal.
+        val messy = ArenaRatingsParser.parse(
+            """
+            [
+              {"deck_win_rate":70.0},
+              {"dbf_id":1},
+              {"dbf_id":3,"deck_win_rate":"not-a-number"},
+              {"dbf_id":5,"deck_win_rate":250.0},
+              {"dbf_id":4,"deck_win_rate":65.0}
+            ]
+            """.trimIndent(),
+            db,
+        )
+        assertEquals(mapOf(EPIC_MAGE to 65.0), messy.ratings)
+
+        // Malformed or empty input never throws; it just yields no ratings.
+        for (input in listOf("", "null", "{}", "[1,2,3]")) {
+            assertTrue(ArenaRatingsParser.parse(input, db).ratings.isEmpty())
+        }
     }
 
     @Test

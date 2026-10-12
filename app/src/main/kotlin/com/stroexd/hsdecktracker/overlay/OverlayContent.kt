@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stroexd.hsdecktracker.AppContainer
 import com.stroexd.hsdecktracker.CollectionActivity
@@ -57,7 +58,9 @@ import com.stroexd.hsdecktracker.R
 import com.stroexd.hsdecktracker.appContainer
 import com.stroexd.hsdecktracker.core.collection.ReceivedStatus
 import com.stroexd.hsdecktracker.core.util.formatNumber
+import com.stroexd.hsdecktracker.core.util.formatPercent
 import com.stroexd.hsdecktracker.core.vision.VisionGameTracker
+import com.stroexd.hsdecktracker.ui.components.CardTile
 import com.stroexd.hsdecktracker.ui.label
 import com.stroexd.hsdecktracker.ui.labelRes
 import com.stroexd.hsdecktracker.ui.theme.HsColors
@@ -82,10 +85,14 @@ internal fun OverlayContent(
     val settings by container.settings.settings.collectAsStateWithLifecycle()
     val metaState by container.meta.state.collectAsStateWithLifecycle()
     val decks by container.decks.decks.collectAsStateWithLifecycle()
+    val draft by container.arenaDraft.collectAsStateWithLifecycle()
     var collapsed by remember { mutableStateOf(false) }
 
     LaunchedEffect(state?.startedAt) {
         if (state != null) collapsed = false
+    }
+    LaunchedEffect(draft.isNotEmpty()) {
+        if (draft.isNotEmpty()) collapsed = false
     }
     LaunchedEffect(collapsed) { onCollapsedChange(collapsed) }
     val activityId by remember { container.collectionActivity.map { it?.id } }.collectAsStateWithLifecycle(initialValue = null)
@@ -162,6 +169,8 @@ internal fun OverlayContent(
             val current = state
             if (scanning) {
                 CollectionScanPanel(container)
+            } else if (draft.isNotEmpty()) {
+                ArenaDraftPanel(container, draft)
             } else if (current == null) {
                 IdleHint(container)
             } else {
@@ -311,6 +320,49 @@ private fun CollectionScanPanel(container: AppContainer) {
         ) { Text(stringResource(R.string.save)) }
         OutlinedButton(onClick = { container.finishCollectionScan(save = false) }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.cancel))
+        }
+    }
+}
+
+@Composable
+private fun ArenaDraftPanel(container: AppContainer, dbfIds: List<Int>) {
+    val cardState by container.cards.state.collectAsStateWithLifecycle()
+    val ratingsState by container.arenaRatings.state.collectAsStateWithLifecycle()
+    val ratings = dbfIds.map { ratingsState.snapshot?.ratings?.get(it) }
+    val best = ratings.filterNotNull().maxOrNull()
+    Column(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            stringResource(R.string.arena_draft_title),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        dbfIds.forEachIndexed { i, dbfId ->
+            val card = cardState.db.byDbfId(dbfId)
+            val rating = ratings[i]
+            CardTile(
+                card = card,
+                name = card?.name ?: "#$dbfId",
+                cost = card?.cost ?: 0,
+                count = 1,
+                height = 30.dp,
+                trailing = {
+                    Text(
+                        formatPercent(rating?.div(100.0), 0),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (rating != null && rating == best) FontWeight.Bold else null,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        modifier = Modifier.width(34.dp).padding(start = 2.dp),
+                    )
+                },
+            )
+        }
+        if (best == null) {
+            Text(
+                stringResource(R.string.arena_ratings_missing),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

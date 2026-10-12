@@ -30,6 +30,9 @@ object ScreenRegions {
 
     fun isMulliganCard(l: OcrLine): Boolean = l.centerX in 0.1f..0.97f && l.centerY in 0.25f..0.84f
 
+    /** The three enlarged cards of an Arena or Duels draft. Starting values pending a real capture. */
+    fun isDraftCard(l: OcrLine): Boolean = l.centerX in 0.12f..0.88f && l.centerY in 0.2f..0.85f
+
     fun isTurnButton(l: OcrLine): Boolean = l.centerX in 0.72f..0.9f && l.centerY in 0.42f..0.58f && l.height <= 0.05f
 
     fun isBanner(l: OcrLine): Boolean = l.centerX in 0.35f..0.65f && l.centerY in 0.38f..0.62f
